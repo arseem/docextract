@@ -16,6 +16,7 @@ from .budget import BudgetExhausted, BudgetTracker
 from .config import Settings
 from .llm.factory import build_backend
 from .llm_stage import BackendUnavailable, run_llm_stage, run_totals
+from .progress import log
 from .scan_stage import run_scan_stage
 
 
@@ -30,6 +31,7 @@ def run(
 ) -> int:
     """Execute (or resume) a run against the given input. Returns the run id."""
     model_tag, model_digest = config.active_model_identity()
+    log(f"[run] input={input_path} backend={config.backend.kind} model={model_tag} workers={workers}")
     run_id = db.create_run(
         conn,
         input_path=input_path,
@@ -45,6 +47,7 @@ def run(
     backend = build_backend(config)
     if config.backend.kind != "fake":
         backend.verify_model_available()  # LLMError propagates -> caller exits non-zero
+        log(f"[run] model verified: {model_tag}@{model_digest}")
 
     run_scan_stage(conn, Path(input_path), run_id, config.limits)
 
@@ -73,6 +76,7 @@ def run(
         tokens_out=tokens_out,
         estimated_cost=estimated_cost,
     )
+    log(f"[run] finished: stop_reason={stop_reason} tokens_in={tokens_in} tokens_out={tokens_out}")
     return run_id
 
 

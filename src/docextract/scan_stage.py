@@ -16,6 +16,7 @@ from . import db
 from .config import LimitsConfig
 from .extract.timeout import extract_with_timeout
 from .normalize import fingerprint_of_text
+from .progress import log
 from .scan import scan_files
 
 
@@ -23,6 +24,7 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
     large_threshold_bytes = int(limits.large_file_threshold_mb * 1024 * 1024)
 
     text_by_fingerprint: dict[str, str] = {}
+    log(f"[scan] scanning {input_path}...")
 
     with scan_files(input_path, max_zip_uncompressed_mb=limits.max_zip_uncompressed_mb) as scanned:
         raw_groups: dict[str, list] = defaultdict(list)
@@ -38,6 +40,11 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
         # consistent with how the representative_path itself is chosen.
         ordered_groups = sorted(raw_groups.items(), key=lambda kv: min(m.relpath for m in kv[1]))
 
+        log(
+            f"[scan] found {len(scanned)} files, {len(ordered_groups)} distinct by raw content"
+            " - extracting text..."
+        )
+        new_extractions = 0
         for raw_sha, members in ordered_groups:
             members = sorted(members, key=lambda m: m.relpath)
             fingerprint, reason = _known_outcome(members, existing)
@@ -47,13 +54,19 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
                     large_threshold_bytes=large_threshold_bytes,
                     timeout_s=limits.extract_timeout_s,
                 )
+                new_extractions += 1
                 if outcome.text is not None:
                     fingerprint = fingerprint_of_text(outcome.text)
                     reason = None
                     text_by_fingerprint.setdefault(fingerprint, outcome.text)
+                    log(f"[scan] [{new_extractions}/{len(ordered_groups)}] extracted: {members[0].relpath}")
                 else:
                     fingerprint = raw_sha  # unreadable file -> fingerprint = raw bytes hash
                     reason = outcome.reason
+                    log(
+                        f"[scan] [{new_extractions}/{len(ordered_groups)}] "
+                        f"quarantined ({reason}): {members[0].relpath}"
+                    )
 
             for m in members:
                 conn.execute(
@@ -71,7 +84,8 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
                     (m.relpath, m.size_bytes, m.raw_sha256, fingerprint, reason, run_id, db.now_iso()),
                 )
 
-    _assign_documents(conn, text_by_fingerprint)
+    unique_docs, quarantined_docs = _assign_documents(conn, text_by_fingerprint)
+    log(f"[scan] done: {unique_docs} unique documents ({quarantined_docs} quarantined at scan time)")
 
 
 def _known_outcome(members: list, existing: dict) -> tuple[str | None, str | None]:
@@ -82,17 +96,20 @@ def _known_outcome(members: list, existing: dict) -> tuple[str | None, str | Non
     return None, None
 
 
-def _assign_documents(conn: sqlite3.Connection, text_by_fingerprint: dict[str, str]) -> None:
+def _assign_documents(conn: sqlite3.Connection, text_by_fingerprint: dict[str, str]) -> tuple[int, int]:
     rows = conn.execute("SELECT path, fingerprint, error_reason FROM files").fetchall()
     by_fingerprint: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
         by_fingerprint[row["fingerprint"]].append(row)
 
+    quarantined_count = 0
     for fingerprint, group in by_fingerprint.items():
         paths = sorted(r["path"] for r in group)
         representative_path = paths[0]
         reason = next((r["error_reason"] for r in group if r["error_reason"]), None)
         status = "quarantined" if reason else "pending"
+        if reason:
+            quarantined_count += 1
         text = text_by_fingerprint.get(fingerprint)
         now = db.now_iso()
         conn.execute(
@@ -110,3 +127,5 @@ def _assign_documents(conn: sqlite3.Connection, text_by_fingerprint: dict[str, s
                 "UPDATE files SET document_id = ?, status = ? WHERE path = ?",
                 (fingerprint, new_status, r["path"]),
             )
+
+    return len(by_fingerprint), quarantined_count

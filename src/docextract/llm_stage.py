@@ -36,6 +36,7 @@ from .budget import BudgetExhausted, BudgetTracker
 from .config import RetryConfig, Settings
 from .llm.base import LLMBackend, LLMResponse, LLMTimeoutError, LLMUnavailableError
 from .postprocess import postprocess
+from .progress import log
 from .prompt import build_prompt, detect_language
 from .schema import LLMOutputError, parse_llm_output
 from .select import select_text
@@ -175,15 +176,16 @@ def _process_document(
     breaker: CircuitBreaker,
     write_lock: threading.Lock,
     stop_event: threading.Event,
-) -> None:
+) -> str:
+    """Returns a short outcome string for progress logging."""
     if stop_event.is_set():
-        return
+        return "skipped"
 
     if doc["status"] == "extracted":
         with write_lock:
             resumed = _resume_from_saved_response(conn, doc)
         if resumed:
-            return
+            return "resumed"
 
     text = doc["extracted_text"] or ""
     language = detect_language(text)
@@ -198,7 +200,7 @@ def _process_document(
     quarantine_reason = None
     for json_attempt in (1, 2):
         if stop_event.is_set():
-            return
+            return "skipped"
         response = _call_with_retry(
             conn=conn, run_id=run_id, doc_id=doc["id"], prompt=prompt,
             max_output_tokens=max_output_tokens, config=config, backend=backend,
@@ -236,6 +238,8 @@ def _process_document(
     if quarantine_reason:
         with write_lock:
             db.mark_document_quarantined(conn, doc["id"], quarantine_reason)
+        return f"quarantined:{quarantine_reason}"
+    return "done"
 
 
 def run_llm_stage(
@@ -250,7 +254,11 @@ def run_llm_stage(
 ) -> None:
     docs = db.pending_documents(conn, limit=limit)
     if not docs:
+        log("[llm] no pending documents")
         return
+
+    total = len(docs)
+    log(f"[llm] processing {total} documents (workers={workers}, backend={config.backend.kind})")
 
     max_chars = int(config.limits.max_prompt_input_tokens * config.limits.bytes_per_token_estimate)
     max_output_tokens = _max_output_tokens(config)
@@ -259,11 +267,13 @@ def run_llm_stage(
     write_lock = threading.Lock()
     stop_event = threading.Event()
     first_error: BaseException | None = None
+    progress_lock = threading.Lock()
+    completed = 0
 
     def run_one(doc: sqlite3.Row) -> None:
-        nonlocal first_error
+        nonlocal first_error, completed
         try:
-            _process_document(
+            outcome = _process_document(
                 conn=conn, run_id=run_id, config=config, backend=backend, doc=doc,
                 max_chars=max_chars, max_output_tokens=max_output_tokens,
                 budget=budget, breaker=breaker, write_lock=write_lock, stop_event=stop_event,
@@ -272,6 +282,12 @@ def run_llm_stage(
             stop_event.set()
             if first_error is None:
                 first_error = e
+            log(f"[llm] stopping: {type(e).__name__}: {e}")
+            return
+        with progress_lock:
+            completed += 1
+            n = completed
+        log(f"[llm] [{n}/{total}] {outcome}: {doc['representative_path']}")
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = [executor.submit(run_one, doc) for doc in docs]
