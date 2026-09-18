@@ -32,19 +32,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    from .llm.base import LLMError
+
     if args.workers < 1:
         print("error: --workers must be >= 1", file=sys.stderr)
         return 2
     config = load_config(args.config)
-    with db.open_db(args.db) as conn:
-        pipeline.run(
-            conn,
-            input_path=args.input,
-            config=config,
-            workers=args.workers,
-            limit=args.limit,
-            budget=args.budget,
-        )
+    try:
+        with db.open_db(args.db) as conn:
+            pipeline.run(
+                conn,
+                input_path=args.input,
+                config=config,
+                workers=args.workers,
+                limit=args.limit,
+                budget=args.budget,
+            )
+    except LLMError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 3
     return 0
 
 

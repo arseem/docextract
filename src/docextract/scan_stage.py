@@ -22,6 +22,8 @@ from .scan import scan_files
 def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limits: LimitsConfig) -> None:
     large_threshold_bytes = int(limits.large_file_threshold_mb * 1024 * 1024)
 
+    text_by_fingerprint: dict[str, str] = {}
+
     with scan_files(input_path, max_zip_uncompressed_mb=limits.max_zip_uncompressed_mb) as scanned:
         raw_groups: dict[str, list] = defaultdict(list)
         for sf in scanned:
@@ -29,7 +31,14 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
 
         existing = {row["path"]: row for row in conn.execute("SELECT * FROM files").fetchall()}
 
-        for raw_sha, members in raw_groups.items():
+        # Sorted by each group's own smallest path, so when several raw
+        # groups share a fingerprint (same normalized text, different
+        # whitespace/formatting), the text kept via setdefault below is
+        # deterministically the one from the lexicographically-first group -
+        # consistent with how the representative_path itself is chosen.
+        ordered_groups = sorted(raw_groups.items(), key=lambda kv: min(m.relpath for m in kv[1]))
+
+        for raw_sha, members in ordered_groups:
             members = sorted(members, key=lambda m: m.relpath)
             fingerprint, reason = _known_outcome(members, existing)
             if fingerprint is None:
@@ -41,6 +50,7 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
                 if outcome.text is not None:
                     fingerprint = fingerprint_of_text(outcome.text)
                     reason = None
+                    text_by_fingerprint.setdefault(fingerprint, outcome.text)
                 else:
                     fingerprint = raw_sha  # unreadable file -> fingerprint = raw bytes hash
                     reason = outcome.reason
@@ -61,7 +71,7 @@ def run_scan_stage(conn: sqlite3.Connection, input_path: Path, run_id: int, limi
                     (m.relpath, m.size_bytes, m.raw_sha256, fingerprint, reason, run_id, db.now_iso()),
                 )
 
-    _assign_documents(conn)
+    _assign_documents(conn, text_by_fingerprint)
 
 
 def _known_outcome(members: list, existing: dict) -> tuple[str | None, str | None]:
@@ -72,7 +82,7 @@ def _known_outcome(members: list, existing: dict) -> tuple[str | None, str | Non
     return None, None
 
 
-def _assign_documents(conn: sqlite3.Connection) -> None:
+def _assign_documents(conn: sqlite3.Connection, text_by_fingerprint: dict[str, str]) -> None:
     rows = conn.execute("SELECT path, fingerprint, error_reason FROM files").fetchall()
     by_fingerprint: dict[str, list[sqlite3.Row]] = defaultdict(list)
     for row in rows:
@@ -83,14 +93,16 @@ def _assign_documents(conn: sqlite3.Connection) -> None:
         representative_path = paths[0]
         reason = next((r["error_reason"] for r in group if r["error_reason"]), None)
         status = "quarantined" if reason else "pending"
+        text = text_by_fingerprint.get(fingerprint)
         now = db.now_iso()
         conn.execute(
             """
             INSERT OR IGNORE INTO documents (
-                id, representative_path, status, quarantine_reason, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                id, representative_path, status, quarantine_reason, extracted_text,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (fingerprint, representative_path, status, reason, now, now),
+            (fingerprint, representative_path, status, reason, text, now, now),
         )
         for r in group:
             new_status = "scanned" if r["path"] == representative_path else "duplicate"

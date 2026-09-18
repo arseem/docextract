@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS documents (
     representative_path TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     quarantine_reason TEXT,
+    -- Persisted (not re-read from the input path) so the LLM/postprocess
+    -- stages work uniformly for zip inputs (temp-extracted, gone once the
+    -- scan stage's context exits) and for resumed runs, and so grounding
+    -- checks always have text available regardless of when they run.
+    extracted_text TEXT,
     doc_type TEXT,
     counterparty_name TEXT,
     counterparty_tax_id TEXT,
@@ -184,3 +189,78 @@ def latest_unfinished_run(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM runs WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1"
     ).fetchone()
+
+
+def pending_documents(conn: sqlite3.Connection, limit: int | None = None) -> list[sqlite3.Row]:
+    """Documents not yet finished, in deterministic order (requirement 4/5:
+    processing order, and therefore what `--limit N` picks, must not depend
+    on `--workers` or on scan/filesystem iteration order)."""
+    rows = conn.execute(
+        "SELECT * FROM documents WHERE status IN ('pending', 'extracted') "
+        "ORDER BY representative_path"
+    ).fetchall()
+    return rows[:limit] if limit is not None else rows
+
+
+def save_llm_call(
+    conn: sqlite3.Connection,
+    *,
+    document_id: str,
+    run_id: int,
+    attempt: int,
+    status: str,
+    raw_response: str | None,
+    parsed_json: str | None,
+    tokens_in: int,
+    tokens_out: int,
+    started_at: str,
+    finished_at: str,
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO llm_calls (
+            document_id, run_id, attempt, status, raw_response, parsed_json,
+            tokens_in, tokens_out, started_at, finished_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            document_id, run_id, attempt, status, raw_response, parsed_json,
+            tokens_in, tokens_out, started_at, finished_at,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def mark_document_extracted(conn: sqlite3.Connection, document_id: str) -> None:
+    conn.execute(
+        "UPDATE documents SET status = 'extracted', updated_at = ? WHERE id = ?",
+        (now_iso(), document_id),
+    )
+
+
+def save_result(conn: sqlite3.Connection, document_id: str, fields: dict) -> None:
+    """The only place that writes LLM-derived fields to `documents`.
+    `document_id` always comes from the pipeline (the fingerprint computed
+    during scanning), never from model output - parametrized SQL, no
+    dynamic SQL, no executescript on document-derived data (requirement 8)."""
+    conn.execute(
+        """
+        UPDATE documents SET
+            status = 'done', doc_type = ?, counterparty_name = ?,
+            counterparty_tax_id = ?, issue_date = ?, due_date = ?,
+            gross_amount = ?, currency = ?, summary = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            fields["doc_type"], fields["counterparty_name"], fields["counterparty_tax_id"],
+            fields["issue_date"], fields["due_date"], fields["gross_amount"],
+            fields["currency"], fields["summary"], now_iso(), document_id,
+        ),
+    )
+
+
+def mark_document_quarantined(conn: sqlite3.Connection, document_id: str, reason: str) -> None:
+    conn.execute(
+        "UPDATE documents SET status = 'quarantined', quarantine_reason = ?, updated_at = ? WHERE id = ?",
+        (reason, now_iso(), document_id),
+    )
