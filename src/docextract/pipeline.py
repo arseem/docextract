@@ -1,16 +1,18 @@
 """Run orchestration.
 
-Milestone 1: stub that only records a `runs` row so CLI/DB/report wiring is
-testable end-to-end. Milestone 3+ replaces the body with scan -> extract ->
-dedupe -> LLM -> postprocess, workers, resume and budget enforcement.
+Milestone 3: scan -> extract -> dedupe -> quarantine is wired in and
+persisted; the report already balances on real data. Milestone 4+ adds the
+LLM stage (workers, resume, budget enforcement) between scan and end_run.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from . import db
 from .config import Settings
+from .scan_stage import run_scan_stage
 
 
 def run(
@@ -35,7 +37,10 @@ def run(
         limit_n=limit,
         budget=budget,
     )
-    # TODO(milestone 3+): scan input_path, extract, dedupe, run LLM stage.
+
+    run_scan_stage(conn, Path(input_path), run_id, config.limits)
+
+    # TODO(milestone 4+): LLM stage (workers, resume, budget enforcement).
     db.end_run(
         conn,
         run_id,
