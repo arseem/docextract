@@ -98,6 +98,17 @@ nie wystarczają do złapania błędów współbieżności na prawdziwym klienci
 HTTP — warto było ręcznie zweryfikować `--workers 16` na żywym backendzie
 przed oddaniem, nie tylko na fake.
 
+## Obserwacja operacyjna: `ollama serve` po wielu godzinach ciągłej pracy
+
+Po ~2h ciągłego, intensywnego testowania (dziesiątki przebiegów) ten sam
+`--workers 16` na `data/sample` nagle zajął 12.5 min zamiast ~90s. Restart
+`ollama serve` (`brew services restart ollama`) przywrócił normalny czas
+(90.3s) natychmiast — wynik i tak był zawsze poprawny (26/26, zgodny
+eval), więc to nie utrata/błąd danych, tylko degradacja wydajności serwera
+inferencji po długiej sesji. Nie problem naszego kodu, ale praktyczna
+wskazówka operacyjna: jeśli `run` nagle zwalnia bez zmian w kodzie/danych,
+zrestartować serwer inferencji przed szukaniem błędu w narzędziu.
+
 ## `--workers` dotyczy tylko etapu LLM
 
 Skan/ekstrakcja/dedup są celowo jednowątkowe (deterministyczne, proste,
