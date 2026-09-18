@@ -42,6 +42,24 @@ obserwacja z benchmarku: model **poprawnie zignorował** treść
 `corr_injection.eml` (nie ustawił kwoty/waluty/kontrahenta z instrukcji w
 tekście dokumentu), choć błędnie sklasyfikował `doc_type` tego dokumentu.
 
+## SIGKILL tuż po realnym wywołaniu modelu, przed zapisem do bazy
+
+Zweryfikowane na żywym Ollama (nie fake): `kill -9` może trafić w moment
+między otrzymaniem odpowiedzi od modelu a `db.save_llm_call(...)`
+(wewnątrz `write_lock`). Taki dokument zostaje w stanie `pending` (nie
+`extracted`/`done`) i po wznowieniu generuje **nowe** wywołanie modelu —
+to nie jest złamanie wymagania 4: ono mówi o dokumentach "zakończonych
+przed przerwaniem", a ten dokument nigdy nie został trwale zakończony
+(zapis się nie zdarzył). Nie da się tego uniknąć bez rozproszonej
+transakcji obejmującej samo wywołanie HTTP, czego nie robimy — świadomy
+kompromis "co najmniej raz" dla wywołań, które nie zdążyły się
+zacommitować, przy zachowaniu "dokładnie raz" dla już ukończonych.
+Zweryfikowane przy tym ubocznie: `temperature=0`, `seed=42` w Ollama **nie
+gwarantuje** bajt-w-bajt identycznej odpowiedzi między dwoma wywołaniami
+tego samego promptu (jeden dokument w teście dostał `gross_amount` przy
+jednym wywołaniu i `null` przy drugim) — znane ograniczenie determinizmu
+lokalnych serwerów inferencji, nie błąd w naszym kodzie.
+
 ## Backend `--config` bez sekcji
 
 Nieznane klucze w configu są odrzucane (`pydantic extra="forbid"`) — literówka
@@ -60,6 +78,25 @@ Rzeczywistą obroną przed wykonaniem takiej instrukcji jest system prompt
 grounding — grounding łapie czystą halucynację (wartość niepowiązaną z
 żadnym tekstem), nie zatruty, ale tekstowo obecny fragment. Ograniczenie do
 opisania wprost w ARCHITECTURE.md.
+
+## Błąd: współdzielony `httpx.Client` psuł timeout pod dużym `--workers`
+
+Znalezione przy weryfikacji `--workers 16` na żywym Ollama (nie w testach
+jednostkowych z `fake`/respx — te go nie łapały, bo nie testują realnej
+współbieżności wątków na jednym połączeniu HTTP). Jeden `httpx.Client`
+współdzielony między 16 wątkami roboczymi sprawiał, że skonfigurowany
+`request_timeout_s=90` odpalał się dopiero po **~32 minutach** zamiast po
+90 sekundach dla części żądań — cały przebieg na `data/sample` zajął prawie
+50 minut zamiast ~90 sekund (jak przy `--workers 4`). Naprawione przez
+otwieranie nowego `httpx.Client` na każde wywołanie (`llm/ollama.py`,
+`llm/openai_compat.py`) zamiast jednego współdzielonego — po naprawie
+`--workers 16` na tych samych danych: 77 s, bez timeoutów. Test regresyjny:
+`tests/test_llm_concurrent_timeout.py` (unix socket, serwer który nigdy nie
+odpowiada, 8 równoległych wywołań muszą timeoutować blisko skonfigurowanej
+wartości, nie multiplikatywnie). Wniosek praktyczny: testy z `respx`/`fake`
+nie wystarczają do złapania błędów współbieżności na prawdziwym kliencie
+HTTP — warto było ręcznie zweryfikować `--workers 16` na żywym backendzie
+przed oddaniem, nie tylko na fake.
 
 ## `--workers` dotyczy tylko etapu LLM
 
