@@ -1,0 +1,60 @@
+# Domyślna konfiguracja docextract.
+# Backend i model wybierane są wyłącznie tutaj — bez zmian w kodzie.
+
+[backend]
+# "ollama" | "openai_compat" | "fake"
+kind = "ollama"
+
+[backend.ollama]
+base_url = "http://localhost:11434"
+# TODO(milestone 8): przypiąć realny tag i pełny sha256 digest odczytany
+# z `ollama list` / `GET /api/tags` na maszynie deweloperskiej.
+model_tag = "TODO"
+model_digest = "TODO"
+num_ctx = 8192
+num_predict = 512
+temperature = 0.0
+seed = 42
+connect_timeout_s = 5.0
+request_timeout_s = 90.0
+
+[backend.openai_compat]
+base_url = "http://localhost:8080/v1"
+model_tag = "TODO"
+model_digest = "TODO"
+max_tokens = 512
+temperature = 0.0
+seed = 42
+connect_timeout_s = 5.0
+request_timeout_s = 90.0
+
+[backend.fake]
+# Backend deterministyczny, wyłącznie do testów (in-process, bez sieci).
+model_tag = "fake-v1"
+model_digest = "fake"
+
+[pricing]
+# USD za 1M tokenów. Backend lokalny -> 0, ta sama ścieżka kodu.
+input_per_million = 0.0
+output_per_million = 0.0
+
+[limits]
+large_file_threshold_mb = 50
+max_zip_uncompressed_mb = 2048
+extract_timeout_s = 30
+# Górne ograniczenie tokenów wejścia liczone konserwatywnie z bajtów promptu,
+# gdy nie skonfigurowano dedykowanego tokenizera.
+max_prompt_input_tokens = 6000
+bytes_per_token_estimate = 3.0
+
+[retry]
+max_retries = 2
+backoff_base_s = 1.0
+backoff_max_s = 20.0
+circuit_breaker_failures = 5
+circuit_breaker_reset_s = 30.0
+
+[self_entities]
+# Nazwy/NIP-y "nas" - używane do ustalenia, która strona jest kontrahentem.
+names = []
+tax_ids = []
