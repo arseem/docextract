@@ -109,6 +109,18 @@ inferencji po długiej sesji. Nie problem naszego kodu, ale praktyczna
 wskazówka operacyjna: jeśli `run` nagle zwalnia bez zmian w kodzie/danych,
 zrestartować serwer inferencji przed szukaniem błędu w narzędziu.
 
+## `openai_compat` zweryfikowany na żywo (nie tylko przez respx)
+
+Zainstalowano tymczasowo `llama.cpp` (`brew install llama.cpp`, potem
+odinstalowane — to nie zależność projektu, tylko ad-hoc weryfikacja),
+uruchomiono `llama-server` na tym samym pliku GGUF co Ollama (blob
+`sha256-5ee4f07c...` w `~/.ollama/models/blobs/`, więc bez dodatkowego
+pobierania modelu) i puszczono `docextract run --config <openai_compat>`
+na `data/sample`. Zadziałało od razu: digest/model verification przez
+`GET /v1/models`, structured output (`response_format.json_schema`),
+mapowanie błędów — wszystko bez zmian w kodzie. Zamyka wcześniej opisaną
+lukę ("openai_compat nigdy nie testowany na żywym serwerze").
+
 ## `--workers` dotyczy tylko etapu LLM
 
 Skan/ekstrakcja/dedup są celowo jednowątkowe (deterministyczne, proste,
