@@ -26,3 +26,15 @@ nie powinien tam zostać żaden dokument.
 
 Nieznane klucze w configu są odrzucane (`pydantic extra="forbid"`) — literówka
 w TOML ma być błędem walidacji, nie cichym fallbackiem na wartość domyślną.
+
+## Wykrywanie kodowania: ograniczona lista kandydatów
+
+`charset_normalizer.from_bytes()` bez ograniczeń myli polski tekst w cp1250
+z cp1252 (obie mapują te same bajty na różne litery — wynik to bezbłędnie
+"poprawny" tekst, tylko z błędnymi znakami, np. "Us³ugi" zamiast "Usługi").
+Zweryfikowane na `data/sample/invoices/inv_nowak.txt`. `extract/encoding.py`
+(milestone 3) ograniczy kandydatów przez `cp_isolation=["utf-8", "cp1250",
+"iso-8859-2"]` — kodowania faktycznie oczekiwane w naszym korpusie (patrz
+sekcja „Dane" w CLAUDE.md). Ograniczenie: dokument w zupełnie innym,
+nieoczekiwanym kodowaniu jednobajtowym (np. cyrylica) może zostać źle
+wykryty lub odrzucony — świadome uproszczenie, do opisania w ARCHITECTURE.md.
