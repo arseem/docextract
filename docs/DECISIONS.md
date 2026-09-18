@@ -61,6 +61,27 @@ grounding — grounding łapie czystą halucynację (wartość niepowiązaną z
 żadnym tekstem), nie zatruty, ale tekstowo obecny fragment. Ograniczenie do
 opisania wprost w ARCHITECTURE.md.
 
+## `--workers` dotyczy tylko etapu LLM
+
+Skan/ekstrakcja/dedup są celowo jednowątkowe (deterministyczne, proste,
+bez ryzyka wyścigów przy przypisywaniu dokumentów do fingerprintów).
+`--workers N` z interfejsu CLI kontroluje liczbę wątków w etapie wywołań
+modelu — jedynym miejscu, gdzie równoległość faktycznie coś przyspiesza
+(I/O-bound HTTP), a nie skanowanie. Wynik końcowy (zbiór rekordów) nie
+zależy od `--workers` niezależnie od tego, który etap on obejmuje —
+wymaganie 5 jest spełnione, a interpretacja upraszcza kod. Do
+rozważenia przy 100x większym archiwum (patrz ARCHITECTURE.md).
+
+## Tekst dokumentu trzymany w bazie, nie re-czytany z `--input`
+
+`documents.extracted_text` jest ustawiane raz po ekstrakcji i używane przez
+etap LLM/postprocess zamiast ponownego czytania pliku z `--input`. Powód:
+dla wejścia typu zip plik trafia do katalogu tymczasowego, który znika po
+zakończeniu etapu skanu (`scan.py`'s `scan_files` context manager) —
+etap LLM (uruchamiany później, także po wznowieniu w osobnym procesie)
+nie miałby już do czego sięgnąć. Ubocznie to też upraszcza grounding
+(zawsze ma dostęp do tekstu, niezależnie od momentu wznowienia).
+
 ## Wykrywanie kodowania: ograniczona lista kandydatów
 
 `charset_normalizer.from_bytes()` bez ograniczeń myli polski tekst w cp1250
