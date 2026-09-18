@@ -2,7 +2,9 @@
 
 setup:
 	uv sync
-	uv run python scripts/verify_model.py || true
+	@echo "Pulling the pinned default model (requires network + a running 'ollama serve')..."
+	ollama pull qwen2.5:3b-instruct
+	uv run python scripts/verify_model.py
 
 test:
 	uv run pytest --disable-socket --allow-unix-socket
@@ -16,4 +18,4 @@ data:
 
 clean:
 	rm -f out.sqlite out.sqlite-wal out.sqlite-shm
-	rm -rf data/dupes data/big
+	rm -f data/dupes.zip data/sample/big_export.txt

@@ -7,10 +7,11 @@ kind = "ollama"
 
 [backend.ollama]
 base_url = "http://localhost:11434"
-# TODO(milestone 8): przypiąć realny tag i pełny sha256 digest odczytany
-# z `ollama list` / `GET /api/tags` na maszynie deweloperskiej.
-model_tag = "TODO"
-model_digest = "TODO"
+# Wybrany pomiarem (patrz ARCHITECTURE.md): qwen2.5:3b-instruct, najszybszy
+# z 3 przetestowanych kandydatów przy porównywalnej lub lepszej jakości.
+# Digest odczytany z `ollama list` / `GET /api/tags` po `ollama pull`.
+model_tag = "qwen2.5:3b-instruct"
+model_digest = "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
 num_ctx = 8192
 num_predict = 512
 temperature = 0.0

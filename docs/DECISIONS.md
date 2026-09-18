@@ -22,6 +22,26 @@ jako `not_started`, razem z `pending`. Postprocessing jest deterministyczny i
 bezkosztowy (bez I/O do modelu), więc przy normalnym zakończeniu przebiegu
 nie powinien tam zostać żaden dokument.
 
+## Wybór domyślnego modelu
+
+Zmierzono trzy kandydatów lokalnie (Apple M4, nie M1 — maszyna dewelopera;
+wyniki na M1 16GB będą prawdopodobnie wolniejsze, ale ten sam model powinien
+się mieścić w budżecie czasowym z zapasem, patrz ARCHITECTURE.md) na pełnym
+`data/sample` (26 nieuszkodzonych dokumentów), `--workers 4`:
+
+| Model | Czas (26 dok.) | doc_type | kwota/waluta | data |
+|---|---|---|---|---|
+| qwen2.5:3b-instruct | 91.7 s (~3.5 s/dok) | 75% | 90.6% | 96.9% |
+| llama3.2:3b | ~180 s (ekstrapolacja z 8 dok., 5.6 s/dok) | niżej | — | — |
+| qwen2.5:7b-instruct | ~240 s (ekstrapolacja z 8 dok., 7.4 s/dok) | 34% (na 8 dok.) | — | — |
+
+`qwen2.5:3b-instruct` wygrywa wyraźnie na szybkości przy porównywalnej lub
+lepszej jakości niż większe modele — wybrany jako domyślny. Dokładność per
+pole (pełny przebieg, eval na data/sample) w ARCHITECTURE.md. Ciekawa
+obserwacja z benchmarku: model **poprawnie zignorował** treść
+`corr_injection.eml` (nie ustawił kwoty/waluty/kontrahenta z instrukcji w
+tekście dokumentu), choć błędnie sklasyfikował `doc_type` tego dokumentu.
+
 ## Backend `--config` bez sekcji
 
 Nieznane klucze w configu są odrzucane (`pydantic extra="forbid"`) — literówka

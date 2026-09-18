@@ -1,8 +1,5 @@
-"""Verify the model pinned in config/default.toml is actually available.
-
-Milestone 1 placeholder: real digest verification against a running backend
-is wired up in milestone 8, once a model has been benchmarked and pinned.
-"""
+"""Verify the model pinned in config/default.toml is actually available,
+with the expected digest. Run by `make setup` after `ollama pull`."""
 
 from __future__ import annotations
 
@@ -12,21 +9,32 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from docextract.config import DEFAULT_CONFIG_PATH, load_config  # noqa: E402
+from docextract.llm.base import LLMError  # noqa: E402
+from docextract.llm.factory import build_backend  # noqa: E402
 
 
 def main() -> int:
     config = load_config(DEFAULT_CONFIG_PATH)
-    tag, digest = config.active_model_identity()
     if config.backend.kind == "fake":
         print("backend=fake, nothing to verify")
         return 0
+
+    tag, digest = config.active_model_identity()
     if tag == "TODO" or digest == "TODO":
         print(
-            f"backend={config.backend.kind}: model tag/digest not pinned yet "
-            "(milestone 8 TODO) - skipping verification"
+            f"backend={config.backend.kind}: model tag/digest not pinned in "
+            "config/default.toml - see README for setup instructions"
         )
-        return 0
-    print(f"backend={config.backend.kind} model={tag}@{digest}: TODO wire up live check")
+        return 1
+
+    backend = build_backend(config)
+    try:
+        backend.verify_model_available()
+    except LLMError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"OK: backend={config.backend.kind} model={tag}@{digest}")
     return 0
 
 
