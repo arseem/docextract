@@ -9,5 +9,6 @@ __pycache__/
 uv.lock.bak
 data/big/
 data/dupes/
+data/dupes.zip
 *.log
 .DS_Store
