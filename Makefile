@@ -9,9 +9,10 @@ test:
 
 data:
 	uv run python scripts/make_dataset.py
-	uv run python scripts/make_dupes.py
-	@echo "make_big.py skipped by default (generates a multi-hundred-MB file); run explicitly:"
-	@echo "  uv run python scripts/make_big.py"
+	@echo "Committed dataset regenerated in data/sample/."
+	@echo "For the memory/performance tests, also run (not committed, see .gitignore):"
+	@echo "  uv run python scripts/make_big.py     # multi-hundred-MB file"
+	@echo "  uv run python scripts/make_dupes.py   # few-thousand-file dedup archive"
 
 clean:
 	rm -f out.sqlite out.sqlite-wal out.sqlite-shm

@@ -1,0 +1,5 @@
+Paragon/faktura uproszczona
+Sprzedawca: Kwiaciarnia U Zosi
+Data wystawienia: 01.04.2024
+Termin płatności: 15.04.2024
+Razem do zapłaty: 150,00 zł

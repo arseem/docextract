@@ -56,5 +56,7 @@ circuit_breaker_reset_s = 30.0
 
 [self_entities]
 # Nazwy/NIP-y "nas" - używane do ustalenia, która strona jest kontrahentem.
-names = []
-tax_ids = []
+# Wartości dopasowane do scripts/make_dataset.py (firma występująca jako
+# wystawca w części dokumentów testowych).
+names = ["Acme Testowa Sp. z o.o."]
+tax_ids = ["1234567802"]
