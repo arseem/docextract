@@ -30,7 +30,11 @@
   bez ryzyka wyścigów). Etap LLM używa `--workers` wątków (I/O-bound, GIL nie
   przeszkadza), ale **jeden zamek zapisu** do SQLite (WAL,
   `check_same_thread=False`) — "jeden pisarz" z CLAUDE.md wymuszony w Pythonie
-  zamiast osobnych połączeń. Wynik nie zależy od `--workers` (testowane 1/4/16).
+  zamiast osobnych połączeń. Wynik nie zależy od `--workers` (testowane 1/4/16
+  jednostkowo i ręcznie na żywym backendzie). Każde wywołanie modelu otwiera
+  własny `httpx.Client` zamiast współdzielić jeden między wątkami — jeden
+  współdzielony klient pod `--workers 16` sprawiał, że skonfigurowany timeout
+  odpalał się dziesiątki minut później niż powinien (patrz DECISIONS.md).
 - **Budżet**: rezerwacja przed każdym wywołaniem = konserwatywny szacunek
   tokenów wejścia (`len(prompt.encode()) / bytes_per_token_estimate`) +
   `max_output_tokens`; przekroczenie → `stop_reason=budget_exhausted` **przed**
