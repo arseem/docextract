@@ -16,5 +16,6 @@ def build_backend(config: Settings):
         return FakeBackend(
             model_tag=config.backend.fake.model_tag,
             model_digest=config.backend.fake.model_digest,
+            sleep_s=config.backend.fake.sleep_s,
         )
     raise ValueError(f"unknown backend kind: {kind!r}")

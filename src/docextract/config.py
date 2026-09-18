@@ -40,6 +40,7 @@ class OpenAICompatConfig(StrictModel):
 class FakeBackendConfig(StrictModel):
     model_tag: str = "fake-v1"
     model_digest: str = "fake"
+    sleep_s: float = 0.0  # test-only: artificial per-call latency (e.g. for SIGKILL timing tests)
 
 
 class BackendConfig(StrictModel):

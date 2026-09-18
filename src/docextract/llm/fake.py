@@ -7,6 +7,7 @@ for documents already completed.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
@@ -36,10 +37,13 @@ class FakeBackend:
     model_digest: str = "fake"
     tokens_per_call_in: int = 100
     tokens_per_call_out: int = 20
+    sleep_s: float = 0.0
     calls: list[FakeCallRecord] = field(default_factory=list)
     _last: object = field(default=None, repr=False)
 
     def generate(self, prompt: str, *, max_tokens: int) -> LLMResponse:
+        if self.sleep_s:
+            time.sleep(self.sleep_s)
         self.calls.append(FakeCallRecord(prompt=prompt, max_tokens=max_tokens))
 
         if callable(self.responses) and not isinstance(self.responses, str):

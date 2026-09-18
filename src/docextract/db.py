@@ -108,7 +108,11 @@ def now_iso() -> str:
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+    # check_same_thread=False: the LLM stage shares one connection across
+    # worker threads, but every write goes through a single lock (see
+    # llm_stage.py's write_lock) - "one writer" per CLAUDE.md, just enforced
+    # in Python rather than by giving each thread its own connection.
+    conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")

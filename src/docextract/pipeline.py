@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 
 from . import db
+from .budget import BudgetExhausted, BudgetTracker
 from .config import Settings
 from .llm.factory import build_backend
 from .llm_stage import BackendUnavailable, run_llm_stage, run_totals
@@ -48,14 +49,17 @@ def run(
     run_scan_stage(conn, Path(input_path), run_id, config.limits)
 
     stop_reason = "completed"
+    budget_tracker = BudgetTracker(budget)
     try:
-        run_llm_stage(conn, run_id, config, backend, limit=limit)
+        run_llm_stage(conn, run_id, config, backend, workers=workers, limit=limit, budget=budget_tracker)
         if limit is not None:
             remaining = conn.execute(
                 "SELECT COUNT(*) c FROM documents WHERE status IN ('pending', 'extracted')"
             ).fetchone()["c"]
             if remaining > 0:
                 stop_reason = "limit_reached"
+    except BudgetExhausted:
+        stop_reason = "budget_exhausted"
     except BackendUnavailable:
         stop_reason = "backend_unavailable"
 

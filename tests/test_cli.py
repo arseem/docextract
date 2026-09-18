@@ -66,6 +66,35 @@ def test_run_rejects_zero_workers(tmp_path, fake_config_file, capsys):
     assert rc != 0
 
 
+def test_run_with_low_budget_stops_and_reports_budget_exhausted(tmp_path, capsys):
+    config_path = tmp_path / "fake_low_budget.toml"
+    config_path.write_text(
+        '[backend]\nkind = "fake"\n[pricing]\ninput_per_million = 0.0\n'
+        "output_per_million = 0.0\n[retry]\nmax_retries = 1\nbackoff_base_s = 0.001\n"
+        "backoff_max_s = 0.01\n"
+    )
+    db_path = tmp_path / "out.sqlite"
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    for i in range(5):
+        (input_dir / f"d{i}.txt").write_text(f"Dokument {i} z jakas tresca.")
+
+    rc = cli.main(
+        [
+            "run", "--input", str(input_dir), "--db", str(db_path),
+            "--config", str(config_path), "--budget", "1",
+        ]
+    )
+    assert rc == 0
+
+    rc = cli.main(["report", "--db", str(db_path), "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["stop_reason"] == "budget_exhausted"
+    assert out["tokens_in"] + out["tokens_out"] <= 1
+    assert out["not_started"] >= 1  # budget of 1 token can't cover any real call
+
+
 def test_run_on_sample_dataset_matches_expected_counts(tmp_path, fake_config_file, capsys):
     db_path = tmp_path / "out.sqlite"
     rc = cli.main(

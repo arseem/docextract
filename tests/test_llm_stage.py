@@ -3,9 +3,11 @@ from __future__ import annotations
 import pytest
 
 from docextract import db
-from docextract.config import Settings
+from docextract.config import RetryConfig, Settings
 from docextract.llm.fake import FakeBackend
 from docextract.llm_stage import BackendUnavailable, run_llm_stage
+
+FAST_RETRY = RetryConfig(max_retries=1, backoff_base_s=0.001, backoff_max_s=0.01)
 
 
 def _seed_document(conn, doc_id: str, text: str, status: str = "pending") -> None:
@@ -81,10 +83,11 @@ def test_retry_succeeds_on_second_attempt(conn_with_run):
 def test_timeout_raises_backend_unavailable_and_leaves_document_pending(conn_with_run):
     conn, run_id = conn_with_run
     _seed_document(conn, "doc1", "text")
-    backend = FakeBackend(responses=iter([TimeoutError("slow")]))
+    backend = FakeBackend(responses=iter([TimeoutError("slow")] * 10))
+    settings = Settings(retry=FAST_RETRY)
 
     with pytest.raises(BackendUnavailable):
-        run_llm_stage(conn, run_id, Settings(), backend, limit=None)
+        run_llm_stage(conn, run_id, settings, backend, limit=None)
 
     row = conn.execute("SELECT status FROM documents WHERE id = 'doc1'").fetchone()
     assert row["status"] == "pending"  # not quarantined, not lost
